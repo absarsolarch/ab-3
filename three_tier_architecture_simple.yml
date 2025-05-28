@@ -1,0 +1,749 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Three-tier web application architecture with web, app, and database servers using Redis for session management'
+
+Parameters:
+  VpcCIDR:
+    Description: CIDR block for the VPC
+    Type: String
+    Default: 10.0.0.0/16
+
+  PublicSubnet1CIDR:
+    Description: CIDR block for the public subnet in AZ 1
+    Type: String
+    Default: 10.0.1.0/24
+
+  PublicSubnet2CIDR:
+    Description: CIDR block for the public subnet in AZ 2
+    Type: String
+    Default: 10.0.2.0/24
+
+  PrivateSubnet1CIDR:
+    Description: CIDR block for the private subnet in AZ 1
+    Type: String
+    Default: 10.0.3.0/24
+
+  PrivateSubnet2CIDR:
+    Description: CIDR block for the private subnet in AZ 2
+    Type: String
+    Default: 10.0.4.0/24
+
+  DBSubnet1CIDR:
+    Description: CIDR block for the database subnet in AZ 1
+    Type: String
+    Default: 10.0.5.0/24
+
+  DBSubnet2CIDR:
+    Description: CIDR block for the database subnet in AZ 2
+    Type: String
+    Default: 10.0.6.0/24
+
+  WebServerInstanceType:
+    Description: EC2 instance type for the web servers
+    Type: String
+    Default: t3.micro
+    AllowedValues:
+      - t2.micro
+      - t2.small
+      - t3.micro
+      - t3.small
+
+  AppServerInstanceType:
+    Description: EC2 instance type for the application servers
+    Type: String
+    Default: t3.micro
+    AllowedValues:
+      - t2.micro
+      - t2.small
+      - t3.micro
+      - t3.small
+
+  DBInstanceType:
+    Description: RDS instance type for the database
+    Type: String
+    Default: db.t3.micro
+    AllowedValues:
+      - db.t3.micro
+      - db.t3.small
+      - db.t3.medium
+
+  RedisInstanceType:
+    Description: ElastiCache Redis instance type
+    Type: String
+    Default: cache.t3.micro
+    AllowedValues:
+      - cache.t2.micro
+      - cache.t3.micro
+      - cache.t3.small
+
+  DBName:
+    Description: Name of the database
+    Type: String
+    Default: myappdb
+
+  DBUsername:
+    Description: Username for the database
+    Type: String
+    Default: app_user
+
+  DBPassword:
+    Description: Password for the database
+    Type: String
+    NoEcho: true
+    MinLength: 8
+
+  KeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access
+    Type: AWS::EC2::KeyPair::KeyName
+
+  GitHubRepo:
+    Description: GitHub repository URL
+    Type: String
+    Default: https://github.com/absarsolarch/ab3.git
+
+Resources:
+  # VPC and Network Resources
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-VPC
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-IGW
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: !Ref PublicSubnet1CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-PublicSubnet1
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: !Ref PublicSubnet2CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-PublicSubnet2
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: !Ref PrivateSubnet1CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-PrivateSubnet1
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: !Ref PrivateSubnet2CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-PrivateSubnet2
+
+  DBSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: !Ref DBSubnet1CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-DBSubnet1
+
+  DBSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: !Ref DBSubnet2CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-DBSubnet2
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-PublicRouteTable
+
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet2
+
+  NatGateway1EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+
+  NatGateway2EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+
+  NatGateway1:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGateway1EIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+
+  NatGateway2:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGateway2EIP.AllocationId
+      SubnetId: !Ref PublicSubnet2
+
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-PrivateRouteTable1
+
+  DefaultPrivateRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway1
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      SubnetId: !Ref PrivateSubnet1
+
+  PrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-PrivateRouteTable2
+
+  DefaultPrivateRoute2:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway2
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      SubnetId: !Ref PrivateSubnet2
+
+  DBRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-DBRouteTable
+
+  DBSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref DBRouteTable
+      SubnetId: !Ref DBSubnet1
+
+  DBSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref DBRouteTable
+      SubnetId: !Ref DBSubnet2
+
+  # Security Groups
+  WebServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for web servers
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-WebServerSG
+
+  AppServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for application servers
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref WebServerSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref WebServerSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-AppServerSG
+
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for database servers
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref AppServerSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-DBSG
+
+  # Redis Security Group
+  RedisSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Redis ElastiCache
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          SourceSecurityGroupId: !Ref AppServerSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          SourceSecurityGroupId: !Ref WebServerSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-RedisSG
+
+  # SSM Parameters for Database Configuration
+  DBHostParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /ab3/db/host
+      Type: String
+      Value: !GetAtt DBInstance.Endpoint.Address
+      Description: Database host endpoint
+
+  DBNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /ab3/db/name
+      Type: String
+      Value: !Ref DBName
+      Description: Database name
+
+  DBUserParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /ab3/db/user
+      Type: String
+      Value: !Ref DBUsername
+      Description: Database username
+
+  DBPasswordParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /ab3/db/password
+      Type: String
+      Value: !Ref DBPassword
+      Description: Database password
+      Tier: Standard
+
+  # Redis Parameter
+  RedisEndpointParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /ab3/redis/endpoint
+      Type: String
+      Value: !GetAtt RedisCluster.RedisEndpoint.Address
+      Description: Redis endpoint
+
+  # App Tier Endpoint Parameter
+  AppTierEndpointParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /ab3/app/endpoint
+      Type: String
+      Value: !Sub http://${AppServerLoadBalancer.DNSName}
+      Description: App tier endpoint
+
+  # IAM Role for EC2 instances to access SSM parameters
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+      Policies:
+        - PolicyName: SSMParameterAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/ab3/*
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref EC2Role
+
+  # Redis ElastiCache
+  RedisSubnetGroup:
+    Type: AWS::ElastiCache::SubnetGroup
+    Properties:
+      Description: Subnet group for Redis ElastiCache
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+
+  RedisCluster:
+    Type: AWS::ElastiCache::CacheCluster
+    Properties:
+      CacheNodeType: !Ref RedisInstanceType
+      Engine: redis
+      NumCacheNodes: 1
+      CacheSubnetGroupName: !Ref RedisSubnetGroup
+      VpcSecurityGroupIds:
+        - !Ref RedisSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-Redis
+
+  # Launch Templates
+  WebServerLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub ${AWS::StackName}-WebServerLaunchTemplate
+      VersionDescription: Initial version
+      LaunchTemplateData:
+        ImageId: ami-028ab64837840c18f  # Amazon Linux 2 AMI (replace with the latest AMI ID)
+        InstanceType: !Ref WebServerInstanceType
+        KeyName: !Ref KeyName
+        SecurityGroupIds:
+          - !Ref WebServerSecurityGroup
+        IamInstanceProfile:
+          Name: !Ref EC2InstanceProfile
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            # Install required packages
+            yum update -y
+            yum install -y git httpd php php-pdo php-json php-curl php-redis
+            
+            # Start Apache
+            systemctl start httpd
+            systemctl enable httpd
+            
+            # Clone the repository
+            cd /var/www/html
+            git clone ${GitHubRepo} .
+            
+            # Run the web setup script
+            chmod +x web_setup.sh
+            ./web_setup.sh
+            
+            # Create a health check file
+            echo "OK" > /var/www/html/health.html
+
+  AppServerLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub ${AWS::StackName}-AppServerLaunchTemplate
+      VersionDescription: Initial version
+      LaunchTemplateData:
+        ImageId: ami-028ab64837840c18f  # Amazon Linux 2 AMI (replace with the latest AMI ID)
+        InstanceType: !Ref AppServerInstanceType
+        KeyName: !Ref KeyName
+        SecurityGroupIds:
+          - !Ref AppServerSecurityGroup
+        IamInstanceProfile:
+          Name: !Ref EC2InstanceProfile
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            # Install required packages
+            yum update -y
+            yum install -y git httpd php php-pdo php-pgsql php-json php-redis php-curl
+            
+            # Start Apache
+            systemctl start httpd
+            systemctl enable httpd
+            
+            # Clone the repository
+            cd /var/www/html
+            git clone ${GitHubRepo} .
+            
+            # Run the app setup script
+            chmod +x app_setup.sh
+            ./app_setup.sh
+            
+            # Create a health check file
+            echo "OK" > /var/www/html/health.html
+
+  # Database Subnet Group
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group for RDS database
+      SubnetIds:
+        - !Ref DBSubnet1
+        - !Ref DBSubnet2
+
+  # RDS Database Instance
+  DBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      AllocatedStorage: 20
+      DBInstanceClass: !Ref DBInstanceType
+      DBName: !Ref DBName
+      Engine: postgres
+      EngineVersion: 17.2
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups:
+        - !Ref DBSecurityGroup
+      MultiAZ: false
+      PubliclyAccessible: false
+      StorageType: gp2
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-Database
+
+  # Auto Scaling Groups
+  WebServerAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub ${AWS::StackName}-WebServerASG
+      LaunchTemplate:
+        LaunchTemplateId: !Ref WebServerLaunchTemplate
+        Version: !GetAtt WebServerLaunchTemplate.LatestVersionNumber
+      MinSize: 2
+      MaxSize: 4
+      DesiredCapacity: 2
+      VPCZoneIdentifier:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      TargetGroupARNs:
+        - !Ref WebServerTargetGroup
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 300
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-WebServer
+          PropagateAtLaunch: true
+
+  AppServerAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub ${AWS::StackName}-AppServerASG
+      LaunchTemplate:
+        LaunchTemplateId: !Ref AppServerLaunchTemplate
+        Version: !GetAtt AppServerLaunchTemplate.LatestVersionNumber
+      MinSize: 2
+      MaxSize: 4
+      DesiredCapacity: 2
+      VPCZoneIdentifier:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      TargetGroupARNs:
+        - !Ref AppServerTargetGroup
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 300
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-AppServer
+          PropagateAtLaunch: true
+
+  # Load Balancers
+  WebServerLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${AWS::StackName}-WebLB
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      SecurityGroups:
+        - !Ref WebServerSecurityGroup
+      Scheme: internet-facing
+      Type: application
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-WebLB
+
+  WebServerTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${AWS::StackName}-WebTG
+      Port: 80
+      Protocol: HTTP
+      VpcId: !Ref VPC
+      HealthCheckPath: /health.html
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: traffic-port
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      TargetType: instance
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-WebTG
+
+  WebServerListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref WebServerTargetGroup
+      LoadBalancerArn: !Ref WebServerLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+  AppServerLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${AWS::StackName}-AppLB
+      Subnets:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroups:
+        - !Ref AppServerSecurityGroup
+      Scheme: internal
+      Type: application
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-AppLB
+
+  AppServerTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${AWS::StackName}-AppTG
+      Port: 80
+      Protocol: HTTP
+      VpcId: !Ref VPC
+      HealthCheckPath: /health.html
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: traffic-port
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      TargetType: instance
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-AppTG
+
+  AppServerListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref AppServerTargetGroup
+      LoadBalancerArn: !Ref AppServerLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+Outputs:
+  WebsiteURL:
+    Description: URL of the web application
+    Value: !Sub http://${WebServerLoadBalancer.DNSName}/frontend.php
+
+  WebServerLoadBalancerDNSName:
+    Description: DNS name of the web server load balancer
+    Value: !GetAtt WebServerLoadBalancer.DNSName
+
+  AppServerLoadBalancerDNSName:
+    Description: DNS name of the app server load balancer
+    Value: !GetAtt AppServerLoadBalancer.DNSName
+
+  DatabaseEndpoint:
+    Description: Endpoint of the database
+    Value: !GetAtt DBInstance.Endpoint.Address
+    
+  RedisEndpoint:
+    Description: Endpoint of the Redis cluster
+    Value: !GetAtt RedisCluster.RedisEndpoint.Address
