@@ -1,9 +1,9 @@
 #!/bin/bash
 # App Server Setup Script
 
-# Install required packages
-yum update -y
-yum install -y httpd php php-pdo php-pgsql php-json php-redis php-curl
+# Install required packages (using dnf instead of yum for Amazon Linux 2023)
+dnf update -y
+dnf install -y httpd php php-pdo php-pgsql php-json php-redis php-curl
 
 # Start and enable Apache
 systemctl start httpd

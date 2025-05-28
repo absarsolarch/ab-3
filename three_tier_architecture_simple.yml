@@ -98,7 +98,7 @@ Parameters:
   GitHubRepo:
     Description: GitHub repository URL
     Type: String
-    Default: https://github.com/absarsolarch/ab-3.git
+    Default: https://github.com/absarsolarch/ab3.git
 
 Resources:
   # VPC and Network Resources
@@ -499,7 +499,7 @@ Resources:
       LaunchTemplateName: !Sub ${AWS::StackName}-WebServerLaunchTemplate
       VersionDescription: Initial version
       LaunchTemplateData:
-        ImageId: ami-028ab64837840c18f  # Amazon Linux 2 AMI (replace with the latest AMI ID)
+        ImageId: ami-0a54f65f4064bca89  # Amazon Linux 2023 AMI
         InstanceType: !Ref WebServerInstanceType
         KeyName: !Ref KeyName
         SecurityGroupIds:
@@ -509,9 +509,9 @@ Resources:
         UserData:
           Fn::Base64: !Sub |
             #!/bin/bash
-            # Install required packages
-            yum update -y
-            yum install -y git httpd php php-pdo php-json php-curl php-redis
+            # Install required packages (using dnf for Amazon Linux 2023)
+            dnf update -y
+            dnf install -y git httpd php php-pdo php-json php-curl php-redis
             
             # Start Apache
             systemctl start httpd
@@ -534,7 +534,7 @@ Resources:
       LaunchTemplateName: !Sub ${AWS::StackName}-AppServerLaunchTemplate
       VersionDescription: Initial version
       LaunchTemplateData:
-        ImageId: ami-028ab64837840c18f  # Amazon Linux 2 AMI (replace with the latest AMI ID)
+        ImageId: ami-0a54f65f4064bca89  # Amazon Linux 2023 AMI
         InstanceType: !Ref AppServerInstanceType
         KeyName: !Ref KeyName
         SecurityGroupIds:
@@ -544,9 +544,9 @@ Resources:
         UserData:
           Fn::Base64: !Sub |
             #!/bin/bash
-            # Install required packages
-            yum update -y
-            yum install -y git httpd php php-pdo php-pgsql php-json php-redis php-curl
+            # Install required packages (using dnf for Amazon Linux 2023)
+            dnf update -y
+            dnf install -y git httpd php php-pdo php-pgsql php-json php-redis php-curl
             
             # Start Apache
             systemctl start httpd
