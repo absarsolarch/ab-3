@@ -509,9 +509,22 @@ Resources:
         UserData:
           Fn::Base64: !Sub |
             #!/bin/bash
+            # Create health check file early for load balancer checks
+            mkdir -p /var/www/html
+            echo "OK" > /var/www/html/health.html
+            
             # Install required packages (using dnf for Amazon Linux 2023)
             dnf update -y
-            dnf install -y git httpd php php-pdo php-json php-curl php-redis
+            dnf install -y git httpd php php-pdo php-json php-curl php-devel php-pgsql gcc make
+            
+            # Install Redis PHP extension using PECL with auto-accept
+            printf "\n" | pecl install redis
+            echo "extension=redis.so" > /etc/php.d/20-redis.ini
+            
+            # Create shared session directory with proper permissions
+            mkdir -p /var/lib/php/sessions
+            chown apache:apache /var/lib/php/sessions
+            chmod 770 /var/lib/php/sessions
             
             # Start Apache
             systemctl start httpd
@@ -524,9 +537,6 @@ Resources:
             # Run the web setup script
             chmod +x web_setup.sh
             ./web_setup.sh
-            
-            # Create a health check file
-            echo "OK" > /var/www/html/health.html
 
   AppServerLaunchTemplate:
     Type: AWS::EC2::LaunchTemplate
@@ -544,9 +554,22 @@ Resources:
         UserData:
           Fn::Base64: !Sub |
             #!/bin/bash
+            # Create health check file early for load balancer checks
+            mkdir -p /var/www/html
+            echo "OK" > /var/www/html/health.html
+            
             # Install required packages (using dnf for Amazon Linux 2023)
             dnf update -y
-            dnf install -y git httpd php php-pdo php-pgsql php-json php-redis php-curl
+            dnf install -y git httpd php php-pdo php-pgsql php-json php-curl php-devel gcc make
+            
+            # Install Redis PHP extension using PECL with auto-accept
+            printf "\n" | pecl install redis
+            echo "extension=redis.so" > /etc/php.d/20-redis.ini
+            
+            # Create shared session directory with proper permissions
+            mkdir -p /var/lib/php/sessions
+            chown apache:apache /var/lib/php/sessions
+            chmod 770 /var/lib/php/sessions
             
             # Start Apache
             systemctl start httpd
@@ -559,9 +582,6 @@ Resources:
             # Run the app setup script
             chmod +x app_setup.sh
             ./app_setup.sh
-            
-            # Create a health check file
-            echo "OK" > /var/www/html/health.html
 
   # Database Subnet Group
   DBSubnetGroup:
@@ -580,7 +600,7 @@ Resources:
       DBInstanceClass: !Ref DBInstanceType
       DBName: !Ref DBName
       Engine: postgres
-      EngineVersion: 17.2
+      EngineVersion: 16.1
       MasterUsername: !Ref DBUsername
       MasterUserPassword: !Ref DBPassword
       DBSubnetGroupName: !Ref DBSubnetGroup

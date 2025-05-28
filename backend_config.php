@@ -11,7 +11,13 @@ $redis_port = 6379;
 // Debug mode - set to true to see detailed errors
 $debug_mode = true;
 
-// Use Redis for session management
-ini_set('session.save_handler', 'redis');
-ini_set('session.save_path', "tcp://$redis_host:$redis_port");
+// Check if Redis extension is loaded
+if (!extension_loaded('redis')) {
+    error_log('Redis extension is not loaded. Please check your PHP configuration.');
+    // Continue without Redis for session management
+} else {
+    // Use Redis for session management
+    ini_set('session.save_handler', 'redis');
+    ini_set('session.save_path', "tcp://$redis_host:$redis_port");
+}
 ?>

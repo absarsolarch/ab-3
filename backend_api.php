@@ -23,56 +23,117 @@ function connectToDatabase() {
     try {
         // For testing without a real database, use Redis
         if ($host === "DB_HOST_PLACEHOLDER" || $host === "YOUR_RDS_ENDPOINT" || $host === "TEST_MODE") {
-            // Initialize Redis
+            // Check if Redis extension is loaded
+            if (!extension_loaded('redis')) {
+                error_log('Redis extension is not loaded. Cannot use Redis for test mode.');
+                return null;
+            }
+            
+            // Initialize Redis with retry logic
             $redis = new Redis();
-            $redis->connect($redis_host, $redis_port);
+            $max_retries = 3;
+            $retry_count = 0;
+            $connected = false;
+            
+            while (!$connected && $retry_count < $max_retries) {
+                try {
+                    $connected = @$redis->connect($redis_host, $redis_port, 2); // 2 second timeout
+                    if (!$connected) {
+                        $retry_count++;
+                        error_log("Redis connection attempt $retry_count failed. Retrying...");
+                        sleep(1);
+                    }
+                } catch (Exception $e) {
+                    $retry_count++;
+                    error_log("Redis connection exception: " . $e->getMessage() . ". Retry $retry_count");
+                    sleep(1);
+                }
+            }
+            
+            if (!$connected) {
+                error_log('Failed to connect to Redis after ' . $max_retries . ' attempts.');
+                return null;
+            }
             
             // Add test data if empty
-            $keys = $redis->keys($redis_prefix . "*");
-            if (empty($keys)) {
-                $id = $redis->incr("property_id_counter");
-                $property = [
-                    "id" => $id,
-                    "title" => "Test Property 1",
-                    "property_type" => "Apartment",
-                    "price" => 450000,
-                    "size_sqft" => 1200,
-                    "bedrooms" => 3,
-                    "bathrooms" => 2,
-                    "location" => "Kuala Lumpur",
-                    "status" => "Available",
-                    "description" => "This is a test property for development purposes.",
-                    "created_at" => date("Y-m-d H:i:s")
-                ];
-                $redis->set($redis_prefix . $id, json_encode($property));
+            try {
+                $keys = $redis->keys($redis_prefix . "*");
+                if (empty($keys)) {
+                    $id = $redis->incr("property_id_counter");
+                    $property = [
+                        "id" => $id,
+                        "title" => "Test Property 1",
+                        "property_type" => "Apartment",
+                        "price" => 450000,
+                        "size_sqft" => 1200,
+                        "bedrooms" => 3,
+                        "bathrooms" => 2,
+                        "location" => "Kuala Lumpur",
+                        "status" => "Available",
+                        "description" => "This is a test property for development purposes.",
+                        "created_at" => date("Y-m-d H:i:s")
+                    ];
+                    $redis->set($redis_prefix . $id, json_encode($property));
+                }
+            } catch (Exception $e) {
+                error_log('Error initializing test data: ' . $e->getMessage());
+                // Continue anyway, as this is just test data
             }
             
             return true;
         } else {
-            // Real PostgreSQL connection
-            $pdo = new PDO("pgsql:host=$host;dbname=$dbname", $user, $password);
-            $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            // Real PostgreSQL connection with retry logic
+            $max_retries = 3;
+            $retry_count = 0;
+            $pdo = null;
             
-            // Create table if not exists
-            $pdo->exec("CREATE TABLE IF NOT EXISTS properties (
-                id SERIAL PRIMARY KEY,
-                title VARCHAR(200) NOT NULL,
-                property_type VARCHAR(50) NOT NULL,
-                price DECIMAL(12,2) NOT NULL,
-                size_sqft INTEGER NOT NULL,
-                bedrooms INTEGER,
-                bathrooms INTEGER,
-                location VARCHAR(200) NOT NULL,
-                status VARCHAR(50) DEFAULT 'Available',
-                description TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )");
+            while ($retry_count < $max_retries) {
+                try {
+                    $pdo = new PDO("pgsql:host=$host;dbname=$dbname", $user, $password);
+                    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+                    
+                    // Test connection with a simple query
+                    $pdo->query("SELECT 1");
+                    
+                    // Create table if not exists
+                    $pdo->exec("CREATE TABLE IF NOT EXISTS properties (
+                        id SERIAL PRIMARY KEY,
+                        title VARCHAR(200) NOT NULL,
+                        property_type VARCHAR(50) NOT NULL,
+                        price DECIMAL(12,2) NOT NULL,
+                        size_sqft INTEGER NOT NULL,
+                        bedrooms INTEGER,
+                        bathrooms INTEGER,
+                        location VARCHAR(200) NOT NULL,
+                        status VARCHAR(50) DEFAULT 'Available',
+                        description TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )");
+                    
+                    break; // Connection successful
+                } catch(PDOException $e) {
+                    $retry_count++;
+                    if ($debug_mode) {
+                        error_log("Database connection attempt $retry_count failed: " . $e->getMessage());
+                    }
+                    
+                    if ($retry_count >= $max_retries) {
+                        if ($debug_mode) {
+                            error_log("Failed to connect to database after $max_retries attempts.");
+                        }
+                        return null;
+                    }
+                    
+                    // Wait before retrying
+                    sleep(2);
+                }
+            }
             
             return $pdo;
         }
-    } catch(PDOException $e) {
+    } catch(Exception $e) {
         if ($debug_mode) {
-            error_log("Database connection error: " . $e->getMessage());
+            error_log("Unexpected error in connectToDatabase: " . $e->getMessage());
         }
         return null;
     }
@@ -164,8 +225,14 @@ if ($db_connected && $_SERVER["REQUEST_METHOD"] == "POST") {
                 curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(['message' => $message]));
                 curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
                 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-                curl_exec($ch);
+                curl_setopt($ch, CURLOPT_TIMEOUT, 5);
+                $result = curl_exec($ch);
+                $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
                 curl_close($ch);
+                
+                if ($http_code >= 400) {
+                    error_log("Callback failed with HTTP code $http_code. Result: $result");
+                }
                 
                 // Return success response
                 header('Content-Type: application/json');
@@ -176,6 +243,7 @@ if ($db_connected && $_SERVER["REQUEST_METHOD"] == "POST") {
             }
         } catch (Exception $e) {
             $error_msg = $debug_mode ? $e->getMessage() : "An error occurred while processing your request.";
+            error_log("Error processing form: " . $e->getMessage());
             
             if ($callback_url) {
                 // Send error to callback URL
@@ -184,6 +252,7 @@ if ($db_connected && $_SERVER["REQUEST_METHOD"] == "POST") {
                 curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(['error' => $error_msg]));
                 curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
                 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($ch, CURLOPT_TIMEOUT, 5);
                 curl_exec($ch);
                 curl_close($ch);
                 
@@ -243,9 +312,12 @@ if (basename($_SERVER['PHP_SELF']) == basename(__FILE__)) {
         echo json_encode([
             'status' => 'ok',
             'db_connected' => $db_connected,
+            'redis_extension_loaded' => extension_loaded('redis'),
             'message' => 'Backend is functioning correctly',
             'post_data' => $_POST,
-            'session_data' => $_SESSION
+            'session_data' => $_SESSION,
+            'php_version' => phpversion(),
+            'server_time' => date('Y-m-d H:i:s')
         ]);
         exit;
     }
@@ -294,6 +366,14 @@ if (basename($_SERVER['PHP_SELF']) == basename(__FILE__)) {
                         $pdo->exec("TRUNCATE TABLE properties RESTART IDENTITY");
                         echo json_encode(['status' => 'success', 'message' => 'Database cleared']);
                     }
+                    break;
+                case 'health':
+                    echo json_encode([
+                        'status' => 'healthy',
+                        'db_connected' => $db_connected,
+                        'redis_connected' => ($pdo === true) ? true : false,
+                        'timestamp' => date('Y-m-d H:i:s')
+                    ]);
                     break;
                 default:
                     echo json_encode(['error' => 'Unknown API endpoint']);
