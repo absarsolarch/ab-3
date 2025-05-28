@@ -517,6 +517,9 @@ Resources:
             dnf update -y
             dnf install -y git httpd php php-pdo php-json php-curl php-devel php-pgsql gcc make
             
+            # Install PHP PEAR/PECL
+            dnf install -y php-pear
+            
             # Install Redis PHP extension using PECL with auto-accept
             printf "\n" | pecl install redis
             echo "extension=redis.so" > /etc/php.d/20-redis.ini
@@ -580,6 +583,9 @@ Resources:
             # Install required packages (using dnf for Amazon Linux 2023)
             dnf update -y
             dnf install -y git httpd php php-pdo php-pgsql php-json php-curl php-devel gcc make
+            
+            # Install PHP PEAR/PECL
+            dnf install -y php-pear
             
             # Install Redis PHP extension using PECL with auto-accept
             printf "\n" | pecl install redis

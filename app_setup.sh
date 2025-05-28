@@ -8,6 +8,9 @@ echo "OK" > /var/www/html/health.html
 dnf update -y
 dnf install -y httpd php php-pdo php-pgsql php-json php-curl php-devel gcc make
 
+# Install PHP PEAR/PECL
+dnf install -y php-pear
+
 # Install Redis PHP extension using PECL with auto-accept
 printf "\n" | pecl install redis
 echo "extension=redis.so" > /etc/php.d/20-redis.ini
@@ -21,12 +24,27 @@ chmod 770 /var/lib/php/sessions
 systemctl start httpd
 systemctl enable httpd
 
+# Install AWS CLI if not already installed
+if ! command -v aws &> /dev/null; then
+    dnf install -y unzip
+    curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+    unzip awscliv2.zip
+    ./aws/install
+    rm -rf aws awscliv2.zip
+fi
+
 # Get configuration from SSM Parameter Store with retry logic
-MAX_RETRIES=5
+MAX_RETRIES=10
 RETRY_COUNT=0
+REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region 2>/dev/null)
+
+echo "Retrieving parameters from SSM in region: $REGION"
+
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-  DB_HOST=$(aws ssm get-parameter --name "/ab3/db/host" --with-decryption --query "Parameter.Value" --output text --region $(curl -s http://169.254.169.254/latest/meta-data/placement/region) 2>/dev/null)
+  echo "Attempting to retrieve DB host (attempt $((RETRY_COUNT+1))/$MAX_RETRIES)"
+  DB_HOST=$(aws ssm get-parameter --name "/ab3/db/host" --with-decryption --query "Parameter.Value" --output text --region $REGION 2>/dev/null)
   if [ $? -eq 0 ] && [ "$DB_HOST" != "None" ] && [ ! -z "$DB_HOST" ]; then
+    echo "Successfully retrieved DB host: $DB_HOST"
     break
   fi
   echo "Waiting for DB host to be available... (Attempt $((RETRY_COUNT+1))/$MAX_RETRIES)"
@@ -36,15 +54,20 @@ done
 
 RETRY_COUNT=0
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-  DB_NAME=$(aws ssm get-parameter --name "/ab3/db/name" --with-decryption --query "Parameter.Value" --output text --region $(curl -s http://169.254.169.254/latest/meta-data/placement/region) 2>/dev/null)
-  DB_USER=$(aws ssm get-parameter --name "/ab3/db/user" --with-decryption --query "Parameter.Value" --output text --region $(curl -s http://169.254.169.254/latest/meta-data/placement/region) 2>/dev/null)
-  DB_PASSWORD=$(aws ssm get-parameter --name "/ab3/db/password" --with-decryption --query "Parameter.Value" --output text --region $(curl -s http://169.254.169.254/latest/meta-data/placement/region) 2>/dev/null)
-  REDIS_HOST=$(aws ssm get-parameter --name "/ab3/redis/endpoint" --query "Parameter.Value" --output text --region $(curl -s http://169.254.169.254/latest/meta-data/placement/region) 2>/dev/null)
+  echo "Attempting to retrieve DB parameters (attempt $((RETRY_COUNT+1))/$MAX_RETRIES)"
+  DB_NAME=$(aws ssm get-parameter --name "/ab3/db/name" --with-decryption --query "Parameter.Value" --output text --region $REGION 2>/dev/null)
+  DB_USER=$(aws ssm get-parameter --name "/ab3/db/user" --with-decryption --query "Parameter.Value" --output text --region $REGION 2>/dev/null)
+  DB_PASSWORD=$(aws ssm get-parameter --name "/ab3/db/password" --with-decryption --query "Parameter.Value" --output text --region $REGION 2>/dev/null)
+  REDIS_HOST=$(aws ssm get-parameter --name "/ab3/redis/endpoint" --query "Parameter.Value" --output text --region $REGION 2>/dev/null)
   
   if [ "$DB_NAME" != "None" ] && [ ! -z "$DB_NAME" ] && \
      [ "$DB_USER" != "None" ] && [ ! -z "$DB_USER" ] && \
      [ "$DB_PASSWORD" != "None" ] && [ ! -z "$DB_PASSWORD" ] && \
      [ "$REDIS_HOST" != "None" ] && [ ! -z "$REDIS_HOST" ]; then
+    echo "Successfully retrieved all parameters"
+    echo "DB_NAME: $DB_NAME"
+    echo "DB_USER: $DB_USER"
+    echo "REDIS_HOST: $REDIS_HOST"
     break
   fi
   echo "Waiting for DB and Redis parameters to be available... (Attempt $((RETRY_COUNT+1))/$MAX_RETRIES)"
@@ -52,8 +75,48 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
   sleep 30
 done
 
-# Create backend config file
-cat > /var/www/html/backend_config.php << EOF
+# Check if we got all the parameters
+if [ -z "$DB_HOST" ] || [ -z "$DB_NAME" ] || [ -z "$DB_USER" ] || [ -z "$DB_PASSWORD" ] || [ -z "$REDIS_HOST" ]; then
+  echo "ERROR: Failed to retrieve all required parameters from SSM" > /var/log/user-data-error.log
+  echo "Using test mode configuration instead"
+  
+  # Create backend config file with test mode settings
+  cat > /var/www/html/backend_config.php << EOF
+<?php
+// Database connection parameters - TEST MODE
+\$host = "TEST_MODE";
+\$dbname = "myappdb";
+\$user = "app_user";
+\$password = "password";
+\$redis_host = "localhost";
+\$redis_port = 6379;
+
+// Debug mode - set to true to see detailed errors
+\$debug_mode = true;
+
+// Check if Redis extension is loaded
+if (!extension_loaded('redis')) {
+    error_log('Redis extension is not loaded. Falling back to file-based sessions.');
+    // Fall back to file-based sessions
+    ini_set('session.save_handler', 'files');
+    ini_set('session.save_path', '/var/lib/php/sessions');
+} else {
+    try {
+        // Initialize Redis for session management
+        ini_set('session.save_handler', 'files');
+        ini_set('session.save_path', '/var/lib/php/sessions');
+        error_log('Using file-based sessions in test mode');
+    } catch (Exception \$e) {
+        error_log('Session setup error: ' . \$e->getMessage() . '. Using file-based sessions.');
+        ini_set('session.save_handler', 'files');
+        ini_set('session.save_path', '/var/lib/php/sessions');
+    }
+}
+?>
+EOF
+else
+  # Create backend config file with real parameters
+  cat > /var/www/html/backend_config.php << EOF
 <?php
 // Database connection parameters
 \$host = "${DB_HOST}";
@@ -92,6 +155,53 @@ if (!extension_loaded('redis')) {
         ini_set('session.save_handler', 'files');
         ini_set('session.save_path', '/var/lib/php/sessions');
     }
+}
+?>
+EOF
+fi
+
+# Create a test file to verify the app server is working
+cat > /var/www/html/app_test.php << EOF
+<?php
+// Include required files
+require_once "backend_config.php";
+
+// Output configuration for debugging
+echo "<h1>App Server Configuration</h1>";
+echo "<pre>";
+echo "Host: " . \$host . "\n";
+echo "Database: " . \$dbname . "\n";
+echo "User: " . \$user . "\n";
+echo "Redis Host: " . \$redis_host . "\n";
+echo "Redis Port: " . \$redis_port . "\n";
+echo "Redis Extension Loaded: " . (extension_loaded('redis') ? 'Yes' : 'No') . "\n";
+echo "PHP Version: " . phpversion() . "\n";
+echo "Server Time: " . date('Y-m-d H:i:s') . "\n";
+echo "</pre>";
+
+// Test database connection
+echo "<h2>Database Connection Test</h2>";
+try {
+    if (\$host === "TEST_MODE") {
+        echo "<p>Running in test mode with Redis as storage backend</p>";
+        if (extension_loaded('redis')) {
+            \$redis = new Redis();
+            \$connected = @\$redis->connect(\$redis_host, \$redis_port, 2);
+            if (\$connected) {
+                echo "<p style='color:green'>Successfully connected to Redis</p>";
+            } else {
+                echo "<p style='color:red'>Failed to connect to Redis</p>";
+            }
+        } else {
+            echo "<p style='color:red'>Redis extension not loaded</p>";
+        }
+    } else {
+        \$pdo = new PDO("pgsql:host=\$host;dbname=\$dbname", \$user, \$password);
+        \$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        echo "<p style='color:green'>Successfully connected to PostgreSQL database</p>";
+    }
+} catch (Exception \$e) {
+    echo "<p style='color:red'>Error: " . \$e->getMessage() . "</p>";
 }
 ?>
 EOF
