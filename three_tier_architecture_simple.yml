@@ -530,13 +530,32 @@ Resources:
             systemctl start httpd
             systemctl enable httpd
             
-            # Clone the repository
-            cd /var/www/html
-            git clone ${GitHubRepo} .
+            # Create a temporary directory for cloning
+            TEMP_DIR=$(mktemp -d)
             
-            # Run the web setup script
-            chmod +x web_setup.sh
-            ./web_setup.sh
+            # Clone the repository to the temporary directory
+            git clone ${GitHubRepo} $TEMP_DIR
+            
+            if [ $? -eq 0 ]; then
+              # Copy files to web root
+              cp -R $TEMP_DIR/* /var/www/html/
+              cp -R $TEMP_DIR/.* /var/www/html/ 2>/dev/null || :
+              
+              # Set proper permissions
+              chown -R apache:apache /var/www/html
+              chmod -R 755 /var/www/html
+              
+              # Run the web setup script
+              cd /var/www/html
+              chmod +x web_setup.sh
+              ./web_setup.sh
+              
+              # Clean up
+              rm -rf $TEMP_DIR
+            else
+              echo "Failed to clone repository" > /var/log/user-data-error.log
+              exit 1
+            fi
 
   AppServerLaunchTemplate:
     Type: AWS::EC2::LaunchTemplate
@@ -575,13 +594,32 @@ Resources:
             systemctl start httpd
             systemctl enable httpd
             
-            # Clone the repository
-            cd /var/www/html
-            git clone ${GitHubRepo} .
+            # Create a temporary directory for cloning
+            TEMP_DIR=$(mktemp -d)
             
-            # Run the app setup script
-            chmod +x app_setup.sh
-            ./app_setup.sh
+            # Clone the repository to the temporary directory
+            git clone ${GitHubRepo} $TEMP_DIR
+            
+            if [ $? -eq 0 ]; then
+              # Copy files to web root
+              cp -R $TEMP_DIR/* /var/www/html/
+              cp -R $TEMP_DIR/.* /var/www/html/ 2>/dev/null || :
+              
+              # Set proper permissions
+              chown -R apache:apache /var/www/html
+              chmod -R 755 /var/www/html
+              
+              # Run the app setup script
+              cd /var/www/html
+              chmod +x app_setup.sh
+              ./app_setup.sh
+              
+              # Clean up
+              rm -rf $TEMP_DIR
+            else
+              echo "Failed to clone repository" > /var/log/user-data-error.log
+              exit 1
+            fi
 
   # Database Subnet Group
   DBSubnetGroup:
