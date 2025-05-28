@@ -98,7 +98,7 @@ Parameters:
   GitHubRepo:
     Description: GitHub repository URL
     Type: String
-    Default: https://github.com/absarsolarch/ab3.git
+    Default: https://github.com/absarsolarch/ab-3.git
 
 Resources:
   # VPC and Network Resources
