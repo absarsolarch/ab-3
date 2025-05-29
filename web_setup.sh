@@ -137,6 +137,9 @@ else
 \$redis_port = 6379;
 \$debug_mode = true;
 
+// Log the configuration
+error_log("Configuration loaded - app_tier_endpoint: " . \$app_tier_endpoint . ", redis_host: " . \$redis_host);
+
 // Check if Redis extension is loaded
 if (!extension_loaded('redis')) {
     error_log('Redis extension is not loaded. Falling back to file-based sessions.');

@@ -20,10 +20,23 @@ if (!$app_tier_endpoint || $app_tier_endpoint == "APP_TIER_ENDPOINT_PLACEHOLDER"
         }
     }
     
-    // If still not set, use localhost for development
+    // If still not set, use the public DNS of the app tier load balancer
+    // This is a fallback for local development
     if (!$app_tier_endpoint || $app_tier_endpoint == "APP_TIER_ENDPOINT_PLACEHOLDER") {
-        $app_tier_endpoint = "http://localhost";
-        error_log("Using localhost as app_tier_endpoint fallback");
+        // Try to get the app tier endpoint from a local config file
+        if (file_exists(__DIR__ . '/local_config.php')) {
+            include_once __DIR__ . '/local_config.php';
+            if (isset($local_app_tier_endpoint)) {
+                $app_tier_endpoint = $local_app_tier_endpoint;
+                error_log("Using app_tier_endpoint from local_config.php: " . $app_tier_endpoint);
+            }
+        }
+        
+        // If still not set, use localhost as a last resort
+        if (!$app_tier_endpoint || $app_tier_endpoint == "APP_TIER_ENDPOINT_PLACEHOLDER") {
+            $app_tier_endpoint = "http://localhost";
+            error_log("Using localhost as app_tier_endpoint fallback");
+        }
     }
 }
 
