@@ -16,6 +16,13 @@ function getProperties() {
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
         curl_setopt($ch, CURLOPT_TIMEOUT, 10);
         curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+        
+        // Add headers for debugging
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'User-Agent: Frontend API Client',
+            'X-Debug: true'
+        ]);
+        
         $response = curl_exec($ch);
         $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         
@@ -27,6 +34,11 @@ function getProperties() {
         
         curl_close($ch);
         
+        if ($debug_mode) {
+            error_log("API Response: " . substr($response, 0, 1000));
+            error_log("HTTP Code: " . $http_code);
+        }
+        
         if ($http_code == 200 && $response) {
             $properties = json_decode($response, true);
             if (!is_array($properties)) {
@@ -34,6 +46,10 @@ function getProperties() {
                     error_log("Invalid JSON response: " . substr($response, 0, 1000));
                 }
                 $properties = [];
+            } else {
+                if ($debug_mode) {
+                    error_log("Successfully parsed JSON response with " . count($properties) . " properties");
+                }
             }
         } else {
             if ($debug_mode) {

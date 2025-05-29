@@ -234,10 +234,16 @@ if ($db_connected && $_SERVER["REQUEST_METHOD"] == "POST") {
                     error_log("Callback failed with HTTP code $http_code. Result: $result");
                 }
                 
-                // Return success response
-                header('Content-Type: application/json');
-                echo json_encode(['status' => 'success', 'message' => $message]);
-                exit;
+                // Check if we should redirect the browser
+                if (isset($_POST['redirect_url'])) {
+                    header('Location: ' . $_POST['redirect_url']);
+                    exit;
+                } else {
+                    // Return success response
+                    header('Content-Type: application/json');
+                    echo json_encode(['status' => 'success', 'message' => $message]);
+                    exit;
+                }
             } else {
                 $_SESSION['message'] = $message;
             }
@@ -256,10 +262,16 @@ if ($db_connected && $_SERVER["REQUEST_METHOD"] == "POST") {
                 curl_exec($ch);
                 curl_close($ch);
                 
-                // Return error response
-                header('Content-Type: application/json');
-                echo json_encode(['status' => 'error', 'error' => $error_msg]);
-                exit;
+                // Check if we should redirect the browser
+                if (isset($_POST['redirect_url'])) {
+                    header('Location: ' . $_POST['redirect_url']);
+                    exit;
+                } else {
+                    // Return error response
+                    header('Content-Type: application/json');
+                    echo json_encode(['status' => 'error', 'error' => $error_msg]);
+                    exit;
+                }
             } else {
                 $_SESSION['error'] = $error_msg;
             }

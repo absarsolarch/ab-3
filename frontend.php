@@ -128,6 +128,7 @@ if (isset($_SESSION['error'])) {
                         <form method="POST" action="<?php echo rtrim($app_tier_endpoint, '/'); ?>/backend_api.php">
                             <input type="hidden" name="action" value="create">
                             <input type="hidden" name="callback_url" value="<?php echo (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://') . $_SERVER['HTTP_HOST']; ?>/frontend_callback.php">
+                            <input type="hidden" name="redirect_url" value="<?php echo (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://') . $_SERVER['HTTP_HOST']; ?>/frontend.php">
                             <div class="mb-3">
                                 <label class="form-label">Property Title</label>
                                 <input type="text" name="title" class="form-control" required>
@@ -218,6 +219,7 @@ if (isset($_SESSION['error'])) {
                                                 <input type="hidden" name="action" value="update">
                                                 <input type="hidden" name="id" value="<?php echo $property['id']; ?>">
                                                 <input type="hidden" name="callback_url" value="<?php echo (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://') . $_SERVER['HTTP_HOST']; ?>/frontend_callback.php">
+                                                <input type="hidden" name="redirect_url" value="<?php echo (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://') . $_SERVER['HTTP_HOST']; ?>/frontend.php">
                                                 <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
                                                     <option value="Available" <?php echo $property['status'] == 'Available' ? 'selected' : ''; ?>>Available</option>
                                                     <option value="Under Contract" <?php echo $property['status'] == 'Under Contract' ? 'selected' : ''; ?>>Under Contract</option>
@@ -228,6 +230,7 @@ if (isset($_SESSION['error'])) {
                                                 <input type="hidden" name="action" value="delete">
                                                 <input type="hidden" name="id" value="<?php echo $property['id']; ?>">
                                                 <input type="hidden" name="callback_url" value="<?php echo (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://') . $_SERVER['HTTP_HOST']; ?>/frontend_callback.php">
+                                                <input type="hidden" name="redirect_url" value="<?php echo (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://') . $_SERVER['HTTP_HOST']; ?>/frontend.php">
                                                 <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Are you sure you want to delete this property?')">
                                                     <i class="fas fa-trash"></i> Delete
                                                 </button>
