@@ -36,13 +36,40 @@ fi
 # Get configuration from SSM Parameter Store with retry logic
 MAX_RETRIES=10
 RETRY_COUNT=0
-REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region 2>/dev/null)
+
+# Get region from instance metadata or fallback to IMDSv2
+TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+REGION=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/region)
+
+# If region is still empty, try the old IMDSv1 method
+if [ -z "$REGION" ]; then
+    REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
+fi
+
+# If region is still empty, try to get it from the instance identity document
+if [ -z "$REGION" ]; then
+    REGION=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | grep region | awk -F\" '{print $4}')
+fi
+
+# If we still don't have a region, default to us-east-1
+if [ -z "$REGION" ]; then
+    echo "Warning: Could not determine region from instance metadata, defaulting to us-east-1"
+    REGION="us-east-1"
+fi
 
 echo "Retrieving parameters from SSM in region: $REGION"
 
+# Try to get DB host parameter
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
   echo "Attempting to retrieve DB host (attempt $((RETRY_COUNT+1))/$MAX_RETRIES)"
-  DB_HOST=$(aws ssm get-parameter --name "/ab3/db/host" --with-decryption --query "Parameter.Value" --output text --region $REGION 2>/dev/null)
+  DB_HOST=$(aws ssm get-parameter --name "/ab3/db/host" --query "Parameter.Value" --output text --region $REGION 2>/dev/null)
+  
+  # If that fails, try the alternative parameter name
+  if [ $? -ne 0 ] || [ "$DB_HOST" == "None" ] || [ -z "$DB_HOST" ]; then
+    echo "Trying alternative parameter name..."
+    DB_HOST=$(aws ssm get-parameter --name "/ab3/db/endpoint" --query "Parameter.Value" --output text --region $REGION 2>/dev/null)
+  fi
+  
   if [ $? -eq 0 ] && [ "$DB_HOST" != "None" ] && [ ! -z "$DB_HOST" ]; then
     echo "Successfully retrieved DB host: $DB_HOST"
     break
@@ -52,12 +79,13 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
   sleep 30
 done
 
+# Try to get other parameters
 RETRY_COUNT=0
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
   echo "Attempting to retrieve DB parameters (attempt $((RETRY_COUNT+1))/$MAX_RETRIES)"
-  DB_NAME=$(aws ssm get-parameter --name "/ab3/db/name" --with-decryption --query "Parameter.Value" --output text --region $REGION 2>/dev/null)
-  DB_USER=$(aws ssm get-parameter --name "/ab3/db/user" --with-decryption --query "Parameter.Value" --output text --region $REGION 2>/dev/null)
-  DB_PASSWORD=$(aws ssm get-parameter --name "/ab3/db/password" --with-decryption --query "Parameter.Value" --output text --region $REGION 2>/dev/null)
+  DB_NAME=$(aws ssm get-parameter --name "/ab3/db/name" --query "Parameter.Value" --output text --region $REGION 2>/dev/null)
+  DB_USER=$(aws ssm get-parameter --name "/ab3/db/user" --query "Parameter.Value" --output text --region $REGION 2>/dev/null)
+  DB_PASSWORD=$(aws ssm get-parameter --name "/ab3/db/password" --query "Parameter.Value" --output text --region $REGION 2>/dev/null)
   REDIS_HOST=$(aws ssm get-parameter --name "/ab3/redis/endpoint" --query "Parameter.Value" --output text --region $REGION 2>/dev/null)
   
   if [ "$DB_NAME" != "None" ] && [ ! -z "$DB_NAME" ] && \

@@ -38,7 +38,26 @@ fi
 # Get Redis endpoint from SSM Parameter Store with retry logic
 MAX_RETRIES=10
 RETRY_COUNT=0
-REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region 2>/dev/null)
+
+# Get region from instance metadata or fallback to IMDSv2
+TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+REGION=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/region)
+
+# If region is still empty, try the old IMDSv1 method
+if [ -z "$REGION" ]; then
+    REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
+fi
+
+# If region is still empty, try to get it from the instance identity document
+if [ -z "$REGION" ]; then
+    REGION=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | grep region | awk -F\" '{print $4}')
+fi
+
+# If we still don't have a region, default to us-east-1
+if [ -z "$REGION" ]; then
+    echo "Warning: Could not determine region from instance metadata, defaulting to us-east-1"
+    REGION="us-east-1"
+fi
 
 echo "Retrieving parameters from SSM in region: $REGION"
 
