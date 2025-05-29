@@ -10,6 +10,11 @@ require_once "frontend_api_client.php";
 $message = '';
 $error = '';
 
+// Debug information about the app tier endpoint
+if ($debug_mode) {
+    error_log("Using app_tier_endpoint: " . $app_tier_endpoint);
+}
+
 // Properties and connection status
 $properties = getProperties();
 $db_connected = !empty($properties);
