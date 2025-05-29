@@ -61,6 +61,8 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
   APP_TIER_ENDPOINT=$(aws ssm get-parameter --name "/ab3/app/endpoint" --query "Parameter.Value" --output text --region $REGION 2>/dev/null)
   if [ $? -eq 0 ] && [ "$APP_TIER_ENDPOINT" != "None" ] && [ ! -z "$APP_TIER_ENDPOINT" ]; then
     echo "Successfully retrieved App Tier endpoint: $APP_TIER_ENDPOINT"
+    # Remove trailing slash if present
+    APP_TIER_ENDPOINT=${APP_TIER_ENDPOINT%/}
     break
   fi
   echo "Waiting for App Tier endpoint to be available... (Attempt $((RETRY_COUNT+1))/$MAX_RETRIES)"
@@ -72,6 +74,10 @@ done
 if [ -z "$REDIS_HOST" ] || [ -z "$APP_TIER_ENDPOINT" ]; then
   echo "ERROR: Failed to retrieve all required parameters from SSM" > /var/log/user-data-error.log
   echo "Using test mode configuration instead"
+  
+  # Get instance metadata for fallback configuration
+  INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+  AVAILABILITY_ZONE=$(curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone)
   
   # Create frontend config file with test mode settings
   cat > /var/www/html/frontend_config.php << EOF

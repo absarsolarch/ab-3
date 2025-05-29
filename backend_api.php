@@ -220,7 +220,7 @@ if ($db_connected && $_SERVER["REQUEST_METHOD"] == "POST") {
             // Handle callback or redirect
             if ($callback_url) {
                 // Send JSON response to callback URL
-                $ch = curl_init("http://" . $callback_url);
+                $ch = curl_init($callback_url);
                 curl_setopt($ch, CURLOPT_POST, 1);
                 curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(['message' => $message]));
                 curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
@@ -247,7 +247,7 @@ if ($db_connected && $_SERVER["REQUEST_METHOD"] == "POST") {
             
             if ($callback_url) {
                 // Send error to callback URL
-                $ch = curl_init("http://" . $callback_url);
+                $ch = curl_init($callback_url);
                 curl_setopt($ch, CURLOPT_POST, 1);
                 curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(['error' => $error_msg]));
                 curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
