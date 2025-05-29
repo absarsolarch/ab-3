@@ -125,7 +125,7 @@ if (isset($_SESSION['error'])) {
                         <i class="fas fa-plus"></i> Add New Property
                     </div>
                     <div class="card-body">
-                        <form method="POST" action="<?php echo $app_tier_endpoint; ?>/backend_api.php">
+                        <form method="POST" action="<?php echo rtrim($app_tier_endpoint, '/'); ?>/backend_api.php">
                             <input type="hidden" name="action" value="create">
                             <input type="hidden" name="callback_url" value="<?php echo (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://') . $_SERVER['HTTP_HOST']; ?>/frontend_callback.php">
                             <div class="mb-3">
@@ -214,7 +214,7 @@ if (isset($_SESSION['error'])) {
                                         <p class="card-text"><?php echo htmlspecialchars($property['description'] ?? ''); ?></p>
                                         
                                         <div class="d-flex justify-content-between mt-3">
-                                            <form method="POST" action="<?php echo $app_tier_endpoint; ?>/backend_api.php" class="me-2">
+                                            <form method="POST" action="<?php echo rtrim($app_tier_endpoint, '/'); ?>/backend_api.php" class="me-2">
                                                 <input type="hidden" name="action" value="update">
                                                 <input type="hidden" name="id" value="<?php echo $property['id']; ?>">
                                                 <input type="hidden" name="callback_url" value="<?php echo (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://') . $_SERVER['HTTP_HOST']; ?>/frontend_callback.php">
@@ -224,7 +224,7 @@ if (isset($_SESSION['error'])) {
                                                     <option value="Sold" <?php echo $property['status'] == 'Sold' ? 'selected' : ''; ?>>Sold</option>
                                                 </select>
                                             </form>
-                                            <form method="POST" action="<?php echo $app_tier_endpoint; ?>/backend_api.php" style="display: inline;">
+                                            <form method="POST" action="<?php echo rtrim($app_tier_endpoint, '/'); ?>/backend_api.php" style="display: inline;">
                                                 <input type="hidden" name="action" value="delete">
                                                 <input type="hidden" name="id" value="<?php echo $property['id']; ?>">
                                                 <input type="hidden" name="callback_url" value="<?php echo (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://') . $_SERVER['HTTP_HOST']; ?>/frontend_callback.php">

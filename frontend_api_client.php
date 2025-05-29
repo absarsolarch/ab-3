@@ -12,7 +12,7 @@ function getProperties() {
         }
         
         $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $app_tier_endpoint . "/backend_api.php?api=properties");
+        curl_setopt($ch, CURLOPT_URL, rtrim($app_tier_endpoint, '/') . "/backend_api.php?api=properties");
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
         curl_setopt($ch, CURLOPT_TIMEOUT, 10);
         curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
@@ -55,7 +55,7 @@ function checkAppTierHealth() {
     
     try {
         $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $app_tier_endpoint . "/backend_api.php?api=health");
+        curl_setopt($ch, CURLOPT_URL, rtrim($app_tier_endpoint, '/') . "/backend_api.php?api=health");
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
         curl_setopt($ch, CURLOPT_TIMEOUT, 5);
         curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);

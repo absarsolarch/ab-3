@@ -4,26 +4,57 @@
 
 // Set the app tier endpoint - this will be replaced by CloudFormation
 $app_tier_endpoint = getenv('APP_TIER_ENDPOINT');
-if (!$app_tier_endpoint) {
-    // If environment variable is not set, check if we're in a CloudFormation deployment
-    if (file_exists('/var/www/html/frontend_config.php')) {
-        // We're in a CloudFormation deployment, but the environment variable isn't set yet
-        // This is a temporary fallback that should be replaced by the setup script
-        $app_tier_endpoint = "APP_TIER_ENDPOINT_PLACEHOLDER";
-    } else {
-        // Local development fallback
+
+// If environment variable is not set, check for other sources
+if (!$app_tier_endpoint || $app_tier_endpoint == "APP_TIER_ENDPOINT_PLACEHOLDER") {
+    // Try to get from AWS SSM Parameter Store if we're in AWS
+    if (function_exists('exec')) {
+        try {
+            exec('aws ssm get-parameter --name "/ab3/app/endpoint" --query "Parameter.Value" --output text 2>/dev/null', $output, $return_var);
+            if ($return_var == 0 && !empty($output[0])) {
+                $app_tier_endpoint = trim($output[0]);
+                error_log("Retrieved app_tier_endpoint from SSM: " . $app_tier_endpoint);
+            }
+        } catch (Exception $e) {
+            error_log("Error retrieving from SSM: " . $e->getMessage());
+        }
+    }
+    
+    // If still not set, use localhost for development
+    if (!$app_tier_endpoint || $app_tier_endpoint == "APP_TIER_ENDPOINT_PLACEHOLDER") {
         $app_tier_endpoint = "http://localhost";
+        error_log("Using localhost as app_tier_endpoint fallback");
     }
 }
 
 // Set Redis host - this will be replaced by CloudFormation
 $redis_host = getenv('REDIS_HOST');
-if (!$redis_host) {
-    $redis_host = "REDIS_HOST_PLACEHOLDER";
+if (!$redis_host || $redis_host == "REDIS_HOST_PLACEHOLDER") {
+    // Try to get from AWS SSM Parameter Store if we're in AWS
+    if (function_exists('exec')) {
+        try {
+            exec('aws ssm get-parameter --name "/ab3/redis/endpoint" --query "Parameter.Value" --output text 2>/dev/null', $output, $return_var);
+            if ($return_var == 0 && !empty($output[0])) {
+                $redis_host = trim($output[0]);
+                error_log("Retrieved redis_host from SSM: " . $redis_host);
+            }
+        } catch (Exception $e) {
+            error_log("Error retrieving from SSM: " . $e->getMessage());
+        }
+    }
+    
+    // If still not set, use localhost for development
+    if (!$redis_host || $redis_host == "REDIS_HOST_PLACEHOLDER") {
+        $redis_host = "localhost";
+        error_log("Using localhost as redis_host fallback");
+    }
 }
 
 $redis_port = 6379;
 $debug_mode = true;
+
+// Log the configuration
+error_log("Configuration loaded - app_tier_endpoint: " . $app_tier_endpoint . ", redis_host: " . $redis_host);
 
 // Check if Redis extension is loaded
 if (!extension_loaded('redis')) {
