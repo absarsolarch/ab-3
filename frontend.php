@@ -10,16 +10,7 @@ require_once "frontend_api_client.php";
 $message = '';
 $error = '';
 
-// Check if app_tier_endpoint is still a placeholder
-if ($app_tier_endpoint == "APP_TIER_ENDPOINT_PLACEHOLDER") {
-    // Try to get the app tier endpoint from the environment
-    $app_tier_endpoint = getenv('APP_TIER_ENDPOINT');
-    if (!$app_tier_endpoint) {
-        // Fallback to localhost for testing
-        $app_tier_endpoint = "http://localhost";
-    }
-}
-
+// Properties and connection status
 $properties = getProperties();
 $db_connected = !empty($properties);
 

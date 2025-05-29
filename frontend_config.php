@@ -6,6 +6,16 @@ $redis_host = "REDIS_HOST_PLACEHOLDER";
 $redis_port = 6379;
 $debug_mode = true;
 
+// Check if the app_tier_endpoint is a placeholder, try to get it from environment variables
+if ($app_tier_endpoint == "APP_TIER_ENDPOINT_PLACEHOLDER") {
+    // Try to get the app tier endpoint from the environment
+    $app_tier_endpoint = getenv('APP_TIER_ENDPOINT');
+    if (!$app_tier_endpoint) {
+        // Fallback to localhost for testing
+        $app_tier_endpoint = "http://localhost";
+    }
+}
+
 // Check if Redis extension is loaded
 if (!extension_loaded('redis')) {
     error_log('Redis extension is not loaded. Please check your PHP configuration.');

@@ -6,17 +6,6 @@ function getProperties() {
     global $app_tier_endpoint, $debug_mode;
     $properties = [];
     
-    // Check if app_tier_endpoint is still a placeholder
-    if ($app_tier_endpoint == "APP_TIER_ENDPOINT_PLACEHOLDER") {
-        error_log("App tier endpoint is still a placeholder. Using fallback endpoint.");
-        // Try to get the app tier endpoint from the environment
-        $app_tier_endpoint = getenv('APP_TIER_ENDPOINT');
-        if (!$app_tier_endpoint) {
-            // Fallback to localhost for testing
-            $app_tier_endpoint = "http://localhost";
-        }
-    }
-    
     try {
         if ($debug_mode) {
             error_log("Attempting to connect to app tier at: " . $app_tier_endpoint);
@@ -63,17 +52,6 @@ function getProperties() {
 // Function to check app tier health
 function checkAppTierHealth() {
     global $app_tier_endpoint, $debug_mode;
-    
-    // Check if app_tier_endpoint is still a placeholder
-    if ($app_tier_endpoint == "APP_TIER_ENDPOINT_PLACEHOLDER") {
-        error_log("App tier endpoint is still a placeholder. Using fallback endpoint.");
-        // Try to get the app tier endpoint from the environment
-        $app_tier_endpoint = getenv('APP_TIER_ENDPOINT');
-        if (!$app_tier_endpoint) {
-            // Fallback to localhost for testing
-            $app_tier_endpoint = "http://localhost";
-        }
-    }
     
     try {
         $ch = curl_init();
